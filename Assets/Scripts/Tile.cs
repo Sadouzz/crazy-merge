@@ -21,136 +21,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
 
     public Rigidbody2D rb;
     public Vector3 offset;
-    public bool isJoint;
-    public JointTile jointParent;
-
-    public TileConnection connection;
-    public bool isConnected => connection != null && connection.connectedTiles.Count > 1;
-
-    // Méthode pour créer une liaison horizontale
-    public static TileConnection CreateHorizontalConnection(List<Tile> tiles)
-    {
-        if (tiles.Count < 2) return null;
-
-        // Vérifier que toutes les tuiles sont sur la même ligne
-        int targetRow = -1;
-        foreach (var tile in tiles)
-        {
-            int row = GetRowIndex(tile.cell);
-            if (targetRow == -1)
-                targetRow = row;
-            else if (row != targetRow)
-                return null; // Les tuiles ne sont pas sur la même ligne
-        }
-
-        TileConnection connection = new TileConnection();
-        connection.connectionType = ConnectionType.Horizontal;
-
-        foreach (var tile in tiles)
-        {
-            connection.AddTile(tile);
-        }
-
-        return connection;
-    }
-
-    // Méthode pour créer une liaison verticale
-    public static TileConnection CreateVerticalConnection(List<Tile> tiles)
-    {
-        if (tiles.Count < 2) return null;
-
-        // Vérifier que toutes les tuiles sont sur la même colonne
-        int targetCol = -1;
-        foreach (var tile in tiles)
-        {
-            int col = GetColumnIndex(tile.cell);
-            if (targetCol == -1)
-                targetCol = col;
-            else if (col != targetCol)
-                return null;
-        }
-
-        TileConnection connection = new TileConnection();
-        connection.connectionType = ConnectionType.Vertical;
-
-        foreach (var tile in tiles)
-        {
-            connection.AddTile(tile);
-        }
-
-        return connection;
-    }
-
-    // Méthode pour créer une liaison en L
-    public static TileConnection CreateLConnection(List<Tile> tiles)
-    {
-        if (tiles.Count < 3) return null;
-
-        // Logique pour vérifier que les tuiles forment un L
-        // (implémentation simplifiée)
-        TileConnection connection = new TileConnection();
-        connection.connectionType = ConnectionType.L_Shape;
-
-        foreach (var tile in tiles)
-        {
-            connection.AddTile(tile);
-        }
-
-        return connection;
-    }
-
-    private static int GetRowIndex(TileCell cell)
-    {
-        for (int i = 0; i < TileGrid.instance.rows.Length; i++)
-        {
-            for (int j = 0; j < TileGrid.instance.rows[i].cells.Length; j++)
-            {
-                if (TileGrid.instance.rows[i].cells[j] == cell)
-                    return i;
-            }
-        }
-        return -1;
-    }
-
-    private static int GetColumnIndex(TileCell cell)
-    {
-        for (int i = 0; i < TileGrid.instance.rows.Length; i++)
-        {
-            for (int j = 0; j < TileGrid.instance.rows[i].cells.Length; j++)
-            {
-                if (TileGrid.instance.rows[i].cells[j] == cell)
-                    return j;
-            }
-        }
-        return -1;
-    }
-
-    // Override de CheckCellDown pour prendre en compte les liaisons
-    public void CheckCellDownWithConnection()
-    {
-        if (isConnected && connection.connectionType == ConnectionType.Horizontal)
-        {
-            // Si c'est une liaison horizontale, vérifier si toute la liaison peut descendre
-            if (connection.CanMoveDown())
-            {
-                connection.MoveAllTilesDown();
-            }
-        }
-        else if (!isConnected)
-        {
-            // Comportement normal pour les tuiles non connectées
-            CheckCellDown();
-        }
-    }
-
-    // Méthode appelée lors d'un merge pour gérer les liaisons
-    public void OnMerge()
-    {
-        if (isConnected)
-        {
-            connection.RemoveTile(this);
-        }
-    }
+    
 
     private void Awake()
     {
@@ -179,7 +50,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
     public void CheckCellDown()
     {
         TileCell tileCellDown = TileGrid.instance.GetCellDown(cell);
-        if (tileCellDown != null && !isJoint)
+        if (tileCellDown != null)
         {
             if (tileCellDown.empty)
             {
@@ -277,205 +148,39 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
         TileBoard.instance.oneTileIsDragged = true;
         myCollider.isTrigger = true;
         GetComponent<RectTransform>().sizeDelta = new Vector2(93, 93);
-        if (isJoint)
-        {
-            jointParent.ParentTile(this, jointParent.jointTiles[1]);
-        }
+        
 
         /*Vector3 worldPoint = Camera.main.ScreenToWorldPoint(eventData.position);
        offset = transform.position - new Vector3(worldPoint.x, worldPoint.y, transform.position.z);/
     }*/
 
-    // Modifiez votre classe Tile pour gérer les collisions des joint tiles
+    // Modifiez votre classe Tile pour gï¿½rer les collisions des joint tiles
 
     public void OnDrag(PointerEventData eventData)
     {
-        if (isMerging || TileBoard.instance.waiting)
+        if (isMerging)
         {
             eventData.pointerDrag = null;
             return;
         }
 
-        // Vérifie si c'est bien CETTE tile qui est draggée (pas l'autre joint tile)
-        if (isJoint && jointParent != null)
-        {
-            // Si une autre joint tile est déjà en train d'être draggée, ne fait rien
-            if (jointParent.isMyTileDragged() && jointParent.whichTileDragged() != GetMyJointIndex())
-            {
-                return; // Cette tile suit passivement, elle ne contrôle pas
-            }
-        }
-
         isDragged = true;
         transform.SetAsLastSibling();
 
-        // Calcule le déplacement souhaité
         Vector2 deltaMove = eventData.delta / canvas.scaleFactor;
         Vector2 currentPos = rectTransform.anchoredPosition;
         Vector2 targetPos = currentPos + deltaMove;
 
-        // Si c'est une joint tile, teste aussi les collisions de l'autre tile
-        if (isJoint && jointParent != null)
+        Tile mergeableTile = null;
+        Vector2 finalPos = TestMovementWithSteps(currentPos, targetPos, out mergeableTile);
+        rectTransform.anchoredPosition = finalPos;
+
+        if (mergeableTile != null)
         {
-            Vector2 finalPos = TestMovementWithJointCollisions(currentPos, targetPos, deltaMove);
-            rectTransform.anchoredPosition = finalPos;
-        }
-        else
-        {
-            // Comportement normal pour les tiles non-jointes
-            Vector2 finalPos = TestMovementWithSteps(currentPos, targetPos);
-            rectTransform.anchoredPosition = finalPos;
+            TileBoard.instance.Merge(this, mergeableTile);
+            eventData.pointerDrag = null;
         }
     }
-
-    // Nouvelle méthode pour tester les mouvements avec les joint tiles (simplifié)
-    private Vector2 TestMovementWithJointCollisions(Vector2 currentPos, Vector2 targetPos, Vector2 deltaMove)
-    {
-        // Trouve l'autre tile jointe
-        Tile otherJointTile = GetOtherJointTile();
-        if (otherJointTile == null)
-        {
-            return TestMovementWithSteps(currentPos, targetPos);
-        }
-
-        // Teste le mouvement pour cette tile (celle qui contrôle)
-        Vector2 myFinalPos = TestMovementWithSteps(currentPos, targetPos);
-
-        // Calcule le mouvement réel effectué
-        Vector2 actualDeltaMove = myFinalPos - currentPos;
-
-        // Vérifie si l'autre tile peut suivre ce mouvement
-        Vector2 otherCurrentPos = otherJointTile.rectTransform.anchoredPosition;
-        Vector2 otherTargetPos = otherCurrentPos + actualDeltaMove;
-
-        // Teste si l'autre tile peut aller à cette position
-        if (!IsPositionValidForOtherTile(otherJointTile, otherTargetPos))
-        {
-            // Si l'autre tile ne peut pas suivre, limite le mouvement
-            // Essaie avec un mouvement plus petit
-            Vector2 limitedDelta = actualDeltaMove * 0.5f; // Réduit de moitié
-            Vector2 limitedTarget = currentPos + limitedDelta;
-            Vector2 limitedOtherTarget = otherCurrentPos + limitedDelta;
-
-            if (IsPositionValid(limitedTarget) && IsPositionValidForOtherTile(otherJointTile, limitedOtherTarget))
-            {
-                return limitedTarget;
-            }
-            else
-            {
-                // Si même réduit ça ne marche pas, pas de mouvement
-                return currentPos;
-            }
-        }
-
-        // L'autre tile peut suivre, on autorise le mouvement complet
-        return myFinalPos;
-    }
-
-    // Trouve l'autre tile dans le joint
-    private Tile GetOtherJointTile()
-    {
-        if (!isJoint || jointParent == null) return null;
-
-        for (int i = 0; i < jointParent.jointTiles.Length; i++)
-        {
-            if (jointParent.jointTiles[i] != this)
-            {
-                return jointParent.jointTiles[i];
-            }
-        }
-        return null;
-    }
-
-    // Teste le mouvement spécifiquement pour l'autre joint tile
-    /*private Vector2 TestMovementForOtherJointTile(Tile otherTile, Vector2 currentPos, Vector2 targetPos)
-    {
-        Vector2 finalPos = currentPos;
-
-        // Teste d'abord le mouvement horizontal
-        Vector2 horizontalPos = new Vector2(targetPos.x, currentPos.y);
-        if (IsPositionValidForOtherTile(otherTile, horizontalPos))
-        {
-            finalPos.x = horizontalPos.x;
-        }
-
-        // Puis teste le mouvement vertical
-        Vector2 verticalPos = new Vector2(finalPos.x, targetPos.y);
-        if (IsPositionValidForOtherTile(otherTile, verticalPos))
-        {
-            finalPos.y = verticalPos.y;
-        }
-
-        return finalPos;
-    }*/
-
-    // Vérifie si une position est valide pour l'autre joint tile
-    private bool IsPositionValidForOtherTile(Tile otherTile, Vector2 testPosition)
-    {
-        // Sauvegarde la position actuelle
-        Vector2 originalPos = otherTile.rectTransform.anchoredPosition;
-
-        // Bouge temporairement à la position test
-        otherTile.rectTransform.anchoredPosition = testPosition;
-
-        // Vérifie les collisions
-        bool hasCollision = CheckCollisionForOtherTile(otherTile);
-
-        // Restaure la position originale
-        otherTile.rectTransform.anchoredPosition = originalPos;
-
-        return !hasCollision;
-    }
-
-    // Vérifie les collisions pour l'autre joint tile
-    private bool CheckCollisionForOtherTile(Tile otherTile)
-    {
-        Vector2 worldSize = new Vector2(
-            otherTile.rectTransform.rect.width * otherTile.rectTransform.lossyScale.x,
-            otherTile.rectTransform.rect.height * otherTile.rectTransform.lossyScale.y
-        );
-
-        ContactFilter2D filter = new ContactFilter2D();
-        filter.SetLayerMask(LayerMask.GetMask("Tiles", "BoardBorders"));
-        filter.useLayerMask = true;
-        filter.useTriggers = false;
-
-        Collider2D[] results = new Collider2D[10];
-        int count = Physics2D.OverlapBox(
-            otherTile.rectTransform.position,
-            worldSize * 0.75f,
-            0f,
-            filter,
-            results
-        );
-
-        for (int i = 0; i < count; i++)
-        {
-            Collider2D col = results[i];
-            if (col.gameObject != otherTile.gameObject && col.gameObject != this.gameObject)
-            {
-                if (col.CompareTag("Tile"))
-                {
-                    Tile collidedTile = col.GetComponent<Tile>();
-                    // Si on peut merger avec cette tile
-                    if (collidedTile != null && TileBoard.instance.CanMerge(otherTile, collidedTile))
-                    {
-                        // Décidez ici si vous voulez merger automatiquement ou non
-                        // TileBoard.instance.Merge(otherTile, collidedTile);
-                        return false; // Autorise le mouvement pour permettre le merge
-                    }
-                    return true; // Collision avec une tuile non-mergeable
-                }
-                else if (col.CompareTag("BoardBorder"))
-                {
-                    return true; // Collision avec la bordure
-                }
-            }
-        }
-
-        return false; // Pas de collision
-    }
-
     public void OnBeginDrag(PointerEventData eventData)
     {
         if (TileBoard.instance.waiting || isMerging)
@@ -484,57 +189,23 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
             return;
         }
 
-        // Vérifie si c'est bien CETTE tile qui commence le drag
-        if (isJoint && jointParent != null)
-        {
-            // Si une autre joint tile est déjà en train d'être draggée, annule
-            if (jointParent.isMyTileDragged())
-            {
-                eventData.pointerDrag = null;
-                return;
-            }
-        }
-
         originalPosition = rectTransform.anchoredPosition;
         TileBoard.instance.oneTileIsDragged = true;
         myCollider.isTrigger = true;
         GetComponent<RectTransform>().sizeDelta = new Vector2(93, 93);
-
-        if (isJoint)
-        {
-            // Trouve l'autre tile et la rend enfant de celle-ci
-            Tile otherTile = GetOtherJointTile();
-            if (otherTile != null)
-            {
-                otherTile.originalPosition = otherTile.rectTransform.anchoredPosition;
-                jointParent.ParentTile(this, otherTile);
-            }
-        }
     }
 
-    // Méthode pour trouver l'index de cette tile dans le joint
-    private int GetMyJointIndex()
-    {
-        if (!isJoint || jointParent == null) return -1;
-
-        for (int i = 0; i < jointParent.jointTiles.Length; i++)
-        {
-            if (jointParent.jointTiles[i] == this)
-            {
-                return i;
-            }
-        }
-        return -1;
-    }
+    // Mï¿½thode pour trouver l'index de cette tile dans le joint
+    
 
     public void OnPointerUp(PointerEventData eventData)
     {
-        Debug.Log("OnPointerUp appelé - isDragged: " + isDragged);
+        Debug.Log("OnPointerUp appelï¿½ - isDragged: " + isDragged);
 
-        // Si on était en train de draguer mais que OnEndDrag n'a pas été appelé
+        // Si on ï¿½tait en train de draguer mais que OnEndDrag n'a pas ï¿½tï¿½ appelï¿½
         if (isDragged)
         {
-            Debug.LogWarning("OnEndDrag manqué ! OnPointerUp prend le relais");
+            Debug.LogWarning("OnEndDrag manquï¿½ ! OnPointerUp prend le relais");
             OnEndDrag(eventData);
         }
     }
@@ -542,18 +213,11 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
     public void OnEndDrag(PointerEventData eventData)
     {
         isDragged = false;
-        Debug.Log("endDrag");
         TileBoard.instance.oneTileIsDragged = false;
         myCollider.isTrigger = false;
         GetComponent<RectTransform>().sizeDelta = new Vector2(88, 88);
 
-        // Remet l'autre joint tile dans son parent normal avant de continuer
-        if (isJoint && jointParent != null)
-        {
-            RestoreJointTileParent();
-        }
-
-        if (isMerging || TileBoard.instance.isMerging || TileBoard.instance.waiting)
+        if (isMerging || TileBoard.instance.isMerging)
         {
             eventData.pointerDrag = null;
             rectTransform.anchoredPosition = originalPosition;
@@ -566,10 +230,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
         {
             if (nearestCell.tile == null)
             {
-                //Debug.Log("se mttre en place");
                 MoveTo(nearestCell);
-                // Trouve une cellule pour l'autre joint tile aussi
-                MoveOtherJointTileToNearestCell();
             }
             else if (nearestCell.tile != this && TileBoard.instance.CanMerge(this, nearestCell.tile))
             {
@@ -578,167 +239,83 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
             else
             {
                 rectTransform.anchoredPosition = originalPosition;
-                RestoreOtherJointTilePosition();
             }
         }
         else
         {
             rectTransform.anchoredPosition = originalPosition;
-            RestoreOtherJointTilePosition();
         }
     }
 
     // Remet l'autre joint tile dans son parent normal
-    private void RestoreJointTileParent()
-    {
-        Tile otherTile = GetOtherJointTile();
-        if (otherTile != null)
-        {
-            // Remets l'autre tile dans son parent habituel
-            // Vous devrez adapter ceci selon votre structure de parents
-            Transform originalParent = TileGrid.instance.transform; // ou le parent approprié
-            otherTile.transform.SetParent(originalParent);
-        }
-    }
-
-    // Trouve une cellule proche pour l'autre joint tile
-    private void MoveOtherJointTileToNearestCell()
-    {
-        Tile otherTile = GetOtherJointTile();
-        if (otherTile != null)
-        {
-            TileCell nearestCell = otherTile.FindNearestCell();
-            if (nearestCell != null && nearestCell.tile == null)
-            {
-                otherTile.MoveTo(nearestCell);
-            }
-            else
-            {
-                // Si pas de cellule libre, remet à la position originale
-                otherTile.rectTransform.anchoredPosition = otherTile.originalPosition;
-            }
-        }
-    }
-
-    // Restaure la position originale de l'autre joint tile
-    private void RestoreOtherJointTilePosition()
-    {
-        Tile otherTile = GetOtherJointTile();
-        if (otherTile != null)
-        {
-            otherTile.rectTransform.anchoredPosition = otherTile.originalPosition;
-        }
-    }
-    /*public void OnDrag(PointerEventData eventData)
-    {
-        if (isMerging || TileBoard.instance.waiting)
-        {
-            eventData.pointerDrag = null;
-            return;
-        }
-
-        isDragged = true;
-        transform.SetAsLastSibling();
-        
-
-        // Calcule le déplacement souhaité
-        Vector2 deltaMove = eventData.delta / canvas.scaleFactor;
-        Vector2 currentPos = rectTransform.anchoredPosition;
-        Vector2 targetPos = currentPos + deltaMove;
-
-        // Découpe le mouvement en petites étapes pour éviter le tunneling
-        Vector2 finalPos = TestMovementWithSteps(currentPos, targetPos);
-
-        rectTransform.anchoredPosition = finalPos;
-    }*/
-
-    private Vector2 TestMovementWithSteps(Vector2 currentPos, Vector2 targetPos)
+    private Vector2 TestMovementWithSteps(Vector2 currentPos, Vector2 targetPos, out Tile mergeableTile)
     {
         Vector2 movement = targetPos - currentPos;
         float distance = movement.magnitude;
+        mergeableTile = null;
 
-        // Si le mouvement est petit, teste directement
-        if (distance <= 5f) // Ajustez cette valeur selon vos besoins
+        if (distance <= 5f)
         {
-            return TestMovement(currentPos, targetPos);
+            return TestMovement(currentPos, targetPos, out mergeableTile);
         }
 
-        // Sinon, découpe en étapes
-        int steps = Mathf.CeilToInt(distance / 5f); // 5 pixels par étape maximum
+        int steps = Mathf.CeilToInt(distance / 5f);
         Vector2 stepVector = movement / steps;
         Vector2 currentTestPos = currentPos;
 
         for (int i = 0; i < steps; i++)
         {
             Vector2 nextPos = currentTestPos + stepVector;
+            Vector2 validPos = TestMovement(currentTestPos, nextPos, out mergeableTile);
 
-            // Teste le mouvement pour cette étape
-            Vector2 validPos = TestMovement(currentTestPos, nextPos);
-
-            // Si on ne peut pas bouger du tout, on s'arrête ici
-            if (validPos == currentTestPos)
-            {
-                break;
-            }
-
+            if (validPos == currentTestPos) break;
             currentTestPos = validPos;
-
-            // Si on n'a pas pu faire le mouvement complet, on s'arrête
-            if (validPos != nextPos)
-            {
-                break;
-            }
+            
+            if (mergeableTile != null) break;
+            if (validPos != nextPos) break;
         }
 
         return currentTestPos;
     }
-
-    private Vector2 TestMovement(Vector2 currentPos, Vector2 targetPos)
+    private Vector2 TestMovement(Vector2 currentPos, Vector2 targetPos, out Tile mergeableTile)
     {
         Vector2 finalPos = currentPos;
+        mergeableTile = null;
 
-        // Teste d'abord le mouvement horizontal
         Vector2 horizontalPos = new Vector2(targetPos.x, currentPos.y);
-        if (IsPositionValid(horizontalPos))
+        Tile hTile = null;
+        if (IsPositionValid(horizontalPos, out hTile))
         {
             finalPos.x = horizontalPos.x;
+            if (hTile != null) mergeableTile = hTile;
         }
 
-        // Puis teste le mouvement vertical
         Vector2 verticalPos = new Vector2(finalPos.x, targetPos.y);
-        if (IsPositionValid(verticalPos))
+        Tile vTile = null;
+        if (IsPositionValid(verticalPos, out vTile))
         {
             finalPos.y = verticalPos.y;
+            if (vTile != null) mergeableTile = vTile;
         }
 
         return finalPos;
     }
-
-    private bool IsPositionValid(Vector2 testPosition)
+    private bool IsPositionValid(Vector2 testPosition, out Tile mergeableTile)
     {
-        // Sauvegarde la position actuelle
         Vector2 originalPos = rectTransform.anchoredPosition;
-
-        // Bouge temporairement à la position test
         rectTransform.anchoredPosition = testPosition;
-
-        // Vérifie les collisions
-        bool hasCollision = CheckCollisionAtCurrentPosition();
-
-        // Restaure la position originale
+        bool hasCollision = CheckCollisionAtCurrentPosition(out mergeableTile);
         rectTransform.anchoredPosition = originalPos;
-
         return !hasCollision;
     }
-
-    private bool CheckCollisionAtCurrentPosition()
+    private bool CheckCollisionAtCurrentPosition(out Tile mergeableTile)
     {
+        mergeableTile = null;
         Vector2 worldSize = new Vector2(
             rectTransform.rect.width * rectTransform.lossyScale.x,
             rectTransform.rect.height * rectTransform.lossyScale.y
         );
 
-        // Utilise un contact filter pour plus de contrôle
         ContactFilter2D filter = new ContactFilter2D();
         filter.SetLayerMask(LayerMask.GetMask("Tiles", "BoardBorders"));
         filter.useLayerMask = true;
@@ -747,7 +324,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
         Collider2D[] results = new Collider2D[10];
         int count = Physics2D.OverlapBox(
             rectTransform.position,
-            worldSize * 0.75f, // Légèrement plus petit pour éviter les faux positifs
+            worldSize * 0.75f,
             0f,
             filter,
             results
@@ -761,22 +338,20 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
                 if (col.CompareTag("Tile"))
                 {
                     Tile otherTile = col.GetComponent<Tile>();
-                    // Si on peut merger, on autorise le mouvement pour permettre la fusion
                     if (otherTile != null && TileBoard.instance.CanMerge(this, otherTile))
                     {
-                        TileBoard.instance.Merge(this, otherTile);
-                        return false; // Pas de collision, on autorise le mouvement vers la tuile mergeable
+                        mergeableTile = otherTile;
+                        return false;
                     }
-                    return true; // Collision avec une tuile non-mergeable
+                    return true;
                 }
                 else if (col.CompareTag("BoardBorder"))
                 {
-                    return true; // Collision avec la bordure
+                    return true;
                 }
             }
         }
-
-        return false; // Pas de collision
+        return false;
     }
 
     /*public void OnEndDrag(PointerEventData eventData)
@@ -787,7 +362,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
         GetComponent<RectTransform>().sizeDelta = new Vector2(88, 88);
         //rb.constraints = RigidbodyConstraints2D.FreezePositionX | RigidbodyConstraints2D.FreezePositionY | RigidbodyConstraints2D.FreezeRotation;
 
-        if (isMerging || TileBoard.instance.isMerging || TileBoard.instance.waiting)
+        if (isMerging || TileBoard.instance.isMerging)
         {
             eventData.pointerDrag = null;
             //ReturnToCell();
@@ -799,7 +374,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
 
         if (nearestCell != null)
         {
-            // Empêche la fusion avec soi-même
+            // Empï¿½che la fusion avec soi-mï¿½me
             if (nearestCell.tile == null)
             {
                 MoveTo(nearestCell);
@@ -842,13 +417,13 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
             Tile otherTile = collision.GetComponent<Tile>();
             if (otherTile != this && TileBoard.instance.CanMerge(this, otherTile))
             {
-                // Snap à la position de l'autre tuile pour une fusion visuelle
+                // Snap ï¿½ la position de l'autre tuile pour une fusion visuelle
                 rectTransform.anchoredPosition = otherTile.rectTransform.anchoredPosition;
                 TileBoard.instance.Merge(this, otherTile);
             }
             else if (otherTile != this)
             {
-                // Empêche la superposition en maintenant une distance minimale
+                // Empï¿½che la superposition en maintenant une distance minimale
                 /*Vector2 dir = (rectTransform.anchoredPosition - otherTile.rectTransform.anchoredPosition).normalized;
                 rectTransform.anchoredPosition = otherTile.rectTransform.anchoredPosition + dir * 20f;
                 isColliding = true;
@@ -871,7 +446,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
             // Distance minimale pour ne pas se coller
             float pushAmount = 0.01f;
 
-            // Repousse légèrement la tuile dans la direction opposée
+            // Repousse lï¿½gï¿½rement la tuile dans la direction opposï¿½e
             transform.position += (Vector3)(dir * pushAmount);
         }
     }*/
@@ -886,9 +461,9 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
 
         if (collision.CompareTag("Cell") && collision.gameObject.GetComponent<TileCell>() == this.cell)
         {
-            // OnTriggerExit2D se déclenche déjà automatiquement quand 
-            // les colliders ne se touchent plus (même aux edges)
-            //Debug.Log("Sortie complète !");
+            // OnTriggerExit2D se dï¿½clenche dï¿½jï¿½ automatiquement quand 
+            // les colliders ne se touchent plus (mï¿½me aux edges)
+            //Debug.Log("Sortie complï¿½te !");
             TileCell cellAbove = TileGrid.instance.GetCellUp(cell);
             ClearCell();
             if (cellAbove.tile != null)
@@ -907,7 +482,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
         }
         this.cell = null;
 
-        // Désactive le collider pendant le merge
+        // Dï¿½sactive le collider pendant le merge
         var collider = GetComponent<Collider2D>();
         if (collider != null) collider.enabled = false;
 
@@ -934,7 +509,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
             }
         }
 
-        return minDistance < 100f ? nearestCell : null; // seuil à ajuster
+        return minDistance < 100f ? nearestCell : null; // seuil ï¿½ ajuster
     }
 
     private IEnumerator Animate(Vector3 to, bool merging = false)
@@ -956,7 +531,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
 
         if (merging)
         {
-            // Réactive le collider avant destruction si besoin
+            // Rï¿½active le collider avant destruction si besoin
             var collider = GetComponent<Collider2D>();
             if (collider != null) collider.enabled = true;
             Destroy(gameObject);
@@ -967,7 +542,7 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
     {
         if (rectTransform == null) return;
 
-        // Calcul de la taille réelle
+        // Calcul de la taille rï¿½elle
         Vector2 worldSize = new Vector2(
             rectTransform.rect.width * rectTransform.lossyScale.x,
             rectTransform.rect.height * rectTransform.lossyScale.y
@@ -987,4 +562,5 @@ public class Tile : MonoBehaviour, IDragHandler, IBeginDragHandler, IEndDragHand
 
 
 }
+
 

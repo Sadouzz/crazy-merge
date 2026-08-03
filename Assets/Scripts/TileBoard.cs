@@ -22,78 +22,12 @@ public class TileBoard : MonoBehaviour
     public bool isMerging = false, oneTileIsDragged, noMoreMove; // Nouveau champ
     public List<int> tileNumbers;
 
-    public void CascadeTilesDownWithConnections()
-    {
-        bool movedAnyTile;
-
-        do
-        {
-            movedAnyTile = false;
-
-            // D'abord traiter les liaisons horizontales
-            var processedConnections = new HashSet<TileConnection>();
-
-            for (int i = TileGrid.instance.rows.Length - 2; i >= 0; i--)
-            {
-                for (int j = 0; j < TileGrid.instance.rows[i].cells.Length; j++)
-                {
-                    TileCell currentCell = TileGrid.instance.rows[i].cells[j];
-
-                    if (currentCell.tile != null && !currentCell.tile.isDragged)
-                    {
-                        var tile = currentCell.tile;
-
-                        if (tile.isConnected &&
-                            tile.connection.connectionType == ConnectionType.Horizontal &&
-                            !processedConnections.Contains(tile.connection))
-                        {
-                            // Traiter toute la liaison horizontale
-                            if (tile.connection.CanMoveDown())
-                            {
-                                tile.connection.MoveAllTilesDown();
-                                movedAnyTile = true;
-                                processedConnections.Add(tile.connection);
-                            }
-                        }
-                        else if (!tile.isConnected)
-                        {
-                            // Traitement normal pour les tuiles non connectées
-                            TileCell cellBelow = TileGrid.instance.GetCellDown(currentCell);
-
-                            if (cellBelow != null && cellBelow.tile != currentCell.tile &&
-                                (cellBelow.empty || CanMerge(currentCell.tile, cellBelow.tile)))
-                            {
-                                if (cellBelow.empty)
-                                {
-                                    currentCell.tile.MoveTo(cellBelow, false);
-                                }
-                                else
-                                {
-                                    Merge(currentCell.tile, cellBelow.tile);
-                                }
-                                movedAnyTile = true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (movedAnyTile)
-            {
-                StartCoroutine(WaitForChanges());
-                return;
-            }
-        }
-        while (movedAnyTile);
-    }
-
-    // Modifier la méthode Merge pour gérer les liaisons
+    // Modifier la mï¿½thode Merge pour gï¿½rer les liaisons
     public void Merge(Tile a, Tile b)
     {
         if (a == b) return;
 
-        // Gérer les liaisons avant le merge
-        a.OnMerge();
+        // Gï¿½rer les liaisons avant le merge
 
         tiles.Remove(a);
         a.Merge(b.cell);
@@ -315,7 +249,7 @@ public class TileBoard : MonoBehaviour
         yield return StartCoroutine(WaitForChanges());
         CascadeTilesDown();
         SaveManager.instance.SaveGame();
-        isMerging = false; // Débloque les inputs
+        isMerging = false; // Dï¿½bloque les inputs
     }
 
     private void MoveTilesUp()
