@@ -22,12 +22,9 @@ public class TileBoard : MonoBehaviour
     public bool isMerging = false, oneTileIsDragged, noMoreMove; // Nouveau champ
     public List<int> tileNumbers;
 
-    // Modifier la m�thode Merge pour g�rer les liaisons
     public void Merge(Tile a, Tile b)
     {
         if (a == b) return;
-
-        // G�rer les liaisons avant le merge
 
         tiles.Remove(a);
         a.Merge(b.cell);
